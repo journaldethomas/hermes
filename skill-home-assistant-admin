@@ -1,0 +1,185 @@
+---
+name: home-assistant-admin
+description: "Use when auditing Home Assistant. Read-only MCP admin."
+version: 0.2.0
+author: Hermes Agent
+license: MIT
+platforms: [linux, macos, windows]
+metadata:
+  hermes:
+    tags: [home-assistant, mcp, audit, automations, dashboards, incidents]
+    related_skills: []
+---
+# Home Assistant Admin Skill
+
+Use this skill to inspect a Home Assistant installation through the connected Home Assistant MCP server. It is read-only by default: do not call services, do not change state, and do not propose hidden side effects.
+
+This skill documents only the Home Assistant MCP tools verified as available in this environment:
+- ha_get_overview
+- ha_get_system_health
+- ha_get_logs
+- ha_search
+- ha_get_state
+- ha_config_get_automation
+- ha_config_get_dashboard
+- ha_get_skill_guide
+
+If a requested check needs a tool that is not available, document the limitation instead of inventing a substitute.
+
+## When to Use
+- Use when the user wants a health check, entity audit, automation review, dashboard review, or incident summary for Home Assistant.
+- Do not use for repairs, entity edits, service calls, or any write action.
+
+## Core rules
+- Use only MCP tools that are actually available in this session.
+- Never invent missing data, hidden features, or assumed repairs.
+- Distinguish confirmed incidents, potential risks, transients, and unverifiable items.
+- Treat startup-only errors as incidents only when later evidence shows they persist.
+- Cite the exact entity_id, automation_id, dashboard path, or YAML snippet that supports each conclusion.
+- Prioritize findings by impact first, then frequency, then recency.
+- Never store secrets, tokens, passwords, or sensitive config in incident tracking.
+- If a correction happens outside the skill, verify the exact target again before claiming success.
+- When the user asks for a targeted perimeter, limit the scope to what MCP output can prove; if the domain cannot be inferred, mark it unknown rather than guessing.
+
+## Modes
+
+### audit
+General Home Assistant health and entity audit.
+
+Use read-only MCP tools such as:
+- ha_get_overview
+- ha_get_system_health
+- ha_get_logs
+- ha_search
+- ha_get_state
+
+Use this mode for general health, or narrower scopes such as Zigbee, heating, security, or devices by area when the MCP data supports that scope.
+
+Focus on:
+- host and core health
+- unavailable entities
+- broken integrations
+- recurring log errors
+- obvious recovery candidates
+- current-vs-startup distinction for errors
+
+Report:
+- what is confirmed broken
+- what looks risky but not yet proven
+- what cannot be verified from the available tools
+
+### automations
+Deep audit of automation YAML and runtime risk.
+
+Use read-only MCP tools such as:
+- ha_search
+- ha_config_get_automation
+- ha_get_state
+- ha_get_logs
+- ha_get_system_health
+
+Use this mode for scoped reviews such as lighting, heating, Zigbee automations, or security automations when the user names the scope or when the linked YAML makes the scope clear.
+
+Check for:
+- conflicting automations that touch the same entities
+- blocked conditions that prevent execution
+- wrong or brittle triggers
+- mode problems (single, restart, queued, parallel)
+- missing or unavailable referenced entities
+- toggle usage where explicit on/off would be safer
+- immediate off logic that may cause flicker or false shutdowns
+- startup-only validation noise that is not a persistent runtime issue
+
+For each automation, cite:
+- automation_id
+- trigger block
+- condition block
+- action block
+- any unavailable referenced entities
+
+### dashboards
+Inspect dashboard structure and configuration.
+
+Use read-only MCP tools such as:
+- ha_config_get_dashboard
+- ha_search
+- ha_get_state
+
+Use this mode for general dashboards or targeted views such as mobile dashboards when the user names them.
+
+Check for:
+- broken entity references in cards
+- duplicate or conflicting resources
+- unstable or missing view paths
+- cards that depend on unavailable entities
+- structure that suggests maintenance drift
+- cards whose scope cannot be verified from MCP output
+
+Report the exact dashboard path and the exact card or field that needs attention.
+
+### incidents
+Track anomalies with evidence and status.
+
+Use read-only MCP tools such as:
+- ha_get_logs
+- ha_get_system_health
+- ha_search
+- ha_get_state
+- ha_config_get_automation
+- ha_config_get_dashboard
+
+Persist incident records locally in ~/.hermes/ha-admin/incidents.json only. Do not write to Home Assistant.
+
+For each incident, keep:
+- stable id
+- first observed date
+- last observed date
+- status: active / intermittent / transient / resolved
+- criticality
+- evidence
+- recommendation
+- comparison with prior audits: new / persistent / regression / intermittent / transient / resolved
+
+Rules for incident tracking:
+- Do not merge startup noise into a persistent incident without proof.
+- Do not assume a repeated warning means a current outage unless current evidence confirms it.
+- Do not mark an incident resolved without sufficient later verification.
+- Do not guess the domain if the MCP data cannot prove it; use unknown.
+- Keep the record compact and factual.
+- Save the JSON atomically with a temporary file and rename.
+
+## Incident classification
+Use this ordering when more than one issue exists:
+1. safety and security
+2. doors, locks, windows, alarms, and other ouvrants
+3. heating and temperature control
+4. essential house functions
+5. wider user impact and frequency
+
+Severity labels:
+- **critical**: safety, security, doors/locks/alarms, heating failure, or core outage
+- **high**: essential automations, front door/ouvrants, recurring control loss, major visibility loss
+- **medium**: functional degradation with limited blast radius
+- **low**: cosmetic, duplicate, or non-essential drift
+
+## Local incident workflow
+1. Load ~/.hermes/ha-admin/incidents.json if it exists; otherwise initialize an empty store.
+2. Match new evidence to an existing incident by stable id.
+3. Update last_observed, append evidence, and preserve prior history.
+4. Create a new incident when the evidence represents a genuinely new issue.
+5. Only set resolved when later MCP evidence shows the issue is no longer present.
+6. Compare with earlier audits to label each item as new, persistent, intermittent, transient, or regression.
+
+## Output style
+- Lead with the most important finding.
+- Use short, concrete bullets.
+- Prefer exact identifiers over paraphrase.
+- End with clear next actions when appropriate.
+
+## Verification
+Before closing an assessment:
+- confirm every claim against MCP output
+- separate confirmed issues from hypotheses
+- note anything you could not verify
+- do not claim a fix unless you re-read the exact target after the fix
+- if a local incident record is written, verify the resulting JSON file contents after the atomic save
