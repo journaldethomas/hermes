@@ -1,7 +1,7 @@
 ---
 name: home-assistant-admin
 description: "Use when auditing Home Assistant. Read-only MCP admin."
-version: 0.2.0
+version: 0.3.0
 author: Hermes Agent
 license: MIT
 platforms: [linux, macos, windows]
@@ -12,34 +12,38 @@ metadata:
 ---
 # Home Assistant Admin Skill
 
-Use this skill to inspect a Home Assistant installation through the connected Home Assistant MCP server. It is read-only by default: do not call services, do not change state, and do not propose hidden side effects.
+Use this skill to inspect a Home Assistant installation through the connected Home Assistant MCP server. Home Assistant access is strictly read-only: never modify Home Assistant, its entities, automations, dashboards, or configurations; never call mutation services or change state. Authorized local incident-file writes are a separate, narrowly scoped permission and never authorize Home Assistant changes.
 
 This skill documents only the Home Assistant MCP tools verified as available in this environment:
-- ha_get_overview
-- ha_get_system_health
-- ha_get_logs
-- ha_search
-- ha_get_state
-- ha_config_get_automation
-- ha_config_get_dashboard
-- ha_get_skill_guide
+- `ha_get_overview`
+- `ha_get_system_health`
+- `ha_get_logs`
+- `ha_search`
+- `ha_get_state`
+- `ha_config_get_automation`
+- `ha_config_get_dashboard`
+- `ha_get_skill_guide`
+- `ha_eval_template` for read-only derived observations, timestamps, and inventory cross-checks
 
-If a requested check needs a tool that is not available, document the limitation instead of inventing a substitute.
+Discover the current tool schemas before use; this list is not a permanent capability ceiling. If a requested check needs a tool that is not available, document the limitation instead of inventing a substitute.
 
 ## When to Use
 - Use when the user wants a health check, entity audit, automation review, dashboard review, or incident summary for Home Assistant.
-- Do not use for repairs, entity edits, service calls, or any write action.
+- Do not use for repairs, entity edits, service calls, or Home Assistant writes. In incidents mode, write only the authorized local incident store; local persistence is not permission to alter Home Assistant.
 
 ## Core rules
 - Use only MCP tools that are actually available in this session.
 - Never invent missing data, hidden features, or assumed repairs.
 - Distinguish confirmed incidents, potential risks, transients, and unverifiable items.
-- Treat startup-only errors as incidents only when later evidence shows they persist.
-- Cite the exact entity_id, automation_id, dashboard path, or YAML snippet that supports each conclusion.
+- Treat startup-only errors as active incidents only when later evidence shows they persist; if retained for tracking, classify isolated startup errors as transient rather than silently merging them into active failures.
+- Confirm safety-relevant availability with exact entity states and device classes; an unavailable entity proves loss of HA visibility, not an open door, a leak, a failed physical siren, or a heating outage.
+- Check data freshness before treating a populated state as recovery; `off` or `disarmed` alone does not prove successful recent polling or command delivery.
+- Report bounded, pending, unparseable, or truncated results as incomplete; never turn an unread section or a partial search into a clean bill of health.
+- Cite the exact `entity_id`, `automation_id`, dashboard path, or YAML snippet that supports each conclusion.
 - Prioritize findings by impact first, then frequency, then recency.
 - Never store secrets, tokens, passwords, or sensitive config in incident tracking.
 - If a correction happens outside the skill, verify the exact target again before claiming success.
-- When the user asks for a targeted perimeter, limit the scope to what MCP output can prove; if the domain cannot be inferred, mark it unknown rather than guessing.
+- When the user asks for a targeted perimeter, limit the scope to what MCP output can prove; if the domain cannot be inferred, mark it `unknown` rather than guessing.
 
 ## Modes
 
@@ -47,11 +51,11 @@ If a requested check needs a tool that is not available, document the limitation
 General Home Assistant health and entity audit.
 
 Use read-only MCP tools such as:
-- ha_get_overview
-- ha_get_system_health
-- ha_get_logs
-- ha_search
-- ha_get_state
+- `ha_get_overview`
+- `ha_get_system_health`
+- `ha_get_logs`
+- `ha_search`
+- `ha_get_state`
 
 Use this mode for general health, or narrower scopes such as Zigbee, heating, security, or devices by area when the MCP data supports that scope.
 
@@ -72,11 +76,11 @@ Report:
 Deep audit of automation YAML and runtime risk.
 
 Use read-only MCP tools such as:
-- ha_search
-- ha_config_get_automation
-- ha_get_state
-- ha_get_logs
-- ha_get_system_health
+- `ha_search`
+- `ha_config_get_automation`
+- `ha_get_state`
+- `ha_get_logs`
+- `ha_get_system_health`
 
 Use this mode for scoped reviews such as lighting, heating, Zigbee automations, or security automations when the user names the scope or when the linked YAML makes the scope clear.
 
@@ -84,14 +88,14 @@ Check for:
 - conflicting automations that touch the same entities
 - blocked conditions that prevent execution
 - wrong or brittle triggers
-- mode problems (single, restart, queued, parallel)
+- `mode` problems (`single`, `restart`, `queued`, `parallel`)
 - missing or unavailable referenced entities
-- toggle usage where explicit on/off would be safer
+- `toggle` usage where explicit on/off would be safer
 - immediate off logic that may cause flicker or false shutdowns
 - startup-only validation noise that is not a persistent runtime issue
 
 For each automation, cite:
-- automation_id
+- `automation_id`
 - trigger block
 - condition block
 - action block
@@ -101,9 +105,9 @@ For each automation, cite:
 Inspect dashboard structure and configuration.
 
 Use read-only MCP tools such as:
-- ha_config_get_dashboard
-- ha_search
-- ha_get_state
+- `ha_config_get_dashboard`
+- `ha_search`
+- `ha_get_state`
 
 Use this mode for general dashboards or targeted views such as mobile dashboards when the user names them.
 
@@ -117,18 +121,34 @@ Check for:
 
 Report the exact dashboard path and the exact card or field that needs attention.
 
+### local supervision and dashboard design
+
+Use this mode for read-only inspection of incident storage, Cron provenance, historical indicators, and a separate local supervision Web dashboard; do not confuse it with the `dashboards` mode for Home Assistant Lovelace configuration.
+
+- For design-only requests, inspect and describe without creating a server, source files, temporary fixtures, Cron jobs or Skill changes. Keep analysis in memory when all file writes are prohibited; this is distinct from a scratch-authorized preactivation exercise.
+- Execute only authorized engine readers (`python3 -B ... validate`, `status`, `history`), capture each exit code, and report actual registry/journal consistency before proposing an architecture.
+- Inspect field/type summaries and bounded selected examples instead of dumping the full incident evidence; this avoids truncation and unnecessary exposure of household identifiers.
+- Distinguish current incident status, latest verification outcome, per-audit comparison counters and historical metadata; none is a substitute for the others.
+- Verify Cron reports and execution records separately from engine commits. Label time/report-based attribution as correlation when no explicit audit-to-execution key exists, and distinguish a direct invocation from a scheduled firing.
+- Propose an independently read-only local viewer, not an HA control surface or a new audit writer. Present anonymized format excerpts, computable metrics, missing data and provenance limitations in a technical synthesis in French.
+- When implementation is authorized, build a separate application from the inspected schema: prefer Python standard-library readers and a dependency-free French frontend, dark by default, responsive, with Europe/Paris timestamps and a 60-second refresh. Keep source paths server-controlled, expose GET/HEAD consultation only, and do not import/call the writer or connect to HA/MCP.
+- Treat source creation, opening a listener and installing/starting a service as separate authorizations. If deployment forbids opening ports, test real HTTP handlers with UNIX socketpair rather than binding even to loopback; deliver an inert systemd proposal and a no-listener check command. State browser-visual, TCP and service-start coverage separately rather than implying those tests ran.
+- Require last-valid RAM caches with explicit stale indicators for incident storage, Cron and reports; never replace a valid snapshot with malformed/partial data or present a missing measurement as zero. Do not persist a second index/database or expose complete Cron prompts.
+
+Read the "Read-only supervision and dashboard read models" section of `references/storage.md` for inspection, data joins and metric semantics; its viewer implementation procedure covers zero-write SQLite reads, no-listener tests and deployment boundaries.
+
 ### incidents
 Track anomalies with evidence and status.
 
 Use read-only MCP tools such as:
-- ha_get_logs
-- ha_get_system_health
-- ha_search
-- ha_get_state
-- ha_config_get_automation
-- ha_config_get_dashboard
+- `ha_get_logs`
+- `ha_get_system_health`
+- `ha_search`
+- `ha_get_state`
+- `ha_config_get_automation`
+- `ha_config_get_dashboard`
 
-Persist incident records locally in ~/.hermes/ha-admin/incidents.json only. Do not write to Home Assistant.
+Persist incidents exclusively through `scripts/incident_store.py`, using `/home/hermesadmin/.hermes/ha-admin/incidents.json`, `audit-history.jsonl`, and immutable reference files in `backups/` (plus same-filesystem temporary files managed by the engine). Read `references/storage.md` for the exact structured-observation contract, validation, locking, commit/recovery protocol, tests and deployment gate. The model must never rewrite or patch the register, journal, or reference backups itself. Authorized routine incident storage needs no extra per-audit confirmation, but grants no writes outside this store or to Home Assistant. Installation of v0.3.0 is source-only: do not run a first production apply during installation; run the isolated suite successfully before production adoption.
 
 For each incident, keep:
 - stable id
@@ -144,9 +164,11 @@ Rules for incident tracking:
 - Do not merge startup noise into a persistent incident without proof.
 - Do not assume a repeated warning means a current outage unless current evidence confirms it.
 - Do not mark an incident resolved without sufficient later verification.
-- Do not guess the domain if the MCP data cannot prove it; use unknown.
+- Do not guess the domain if the MCP data cannot prove it; use `unknown`.
 - Keep the record compact and factual.
-- Save the JSON atomically with a temporary file and rename.
+- Use only the Python engine for persistent updates; never automatically overwrite invalid existing JSON or bypass validation/backup verification. Emit observations, not a replacement register.
+- The engine uses Linux exclusive flock, same-directory temporary files, file flush/fsync, os.replace, parent-directory synchronization where supported, verified backups and readback. The register and JSONL are not one atomic transaction: embedded committed audit receipts permit safe journal recovery and audit_id idempotence.
+- Load both `references/incidents.md` (MCP analysis) and `references/storage.md` (storage authority) before incidents mode. If a terminal/local Python runner is unavailable, report that persistence and runtime tests cannot be executed; do not substitute MCP template execution, a fabricated result, or model-driven file rewriting.
 
 ## Incident classification
 Use this ordering when more than one issue exists:
@@ -163,17 +185,39 @@ Severity labels:
 - **low**: cosmetic, duplicate, or non-essential drift
 
 ## Local incident workflow
-1. Load ~/.hermes/ha-admin/incidents.json if it exists; otherwise initialize an empty store.
-2. Match new evidence to an existing incident by stable id.
-3. Update last_observed, append evidence, and preserve prior history.
-4. Create a new incident when the evidence represents a genuinely new issue.
-5. Only set resolved when later MCP evidence shows the issue is no longer present.
-6. Compare with earlier audits to label each item as new, persistent, intermittent, transient, or regression.
+1. Inspect the existing authorized root and distinguish missing files from permission or parse errors. This engine requires an existing valid register; do not initialize missing production storage or overwrite unreadable/malformed data automatically. Validate through the engine when execution is available; otherwise limit work to read-only inspection and report persistence blocked.
+2. Establish an observation timestamp from a retrieved clock, preserving its timezone; do not invent an audit time from the latest log entry.
+3. Collect a complete unavailable-entity inventory, triage recent logs, then verify high-impact exact targets. For comparative audits, compare each group's member `entity_id` sets, not just counts; record unchanged, added, no-longer-unavailable, and missing/unverified members separately. If fresh evidence shows availability changed during collection, repeat the complete comparison and timestamp the later snapshot before finalizing. Follow the detailed sequence in `references/incidents.md`.
+4. Match findings by stable incident type and object identifier. Preserve existing IDs and `first_observed`; keep historical log/state onset separately from first observation by the local register.
+5. Let the engine append compact supporting evidence, advance the last failure's `last_observed`, and increment `observations` once per audit only when a current failing condition or a genuinely new occurrence is established. Re-reading an unchanged historical log is not new supporting evidence: preserve `last_observed` and `observations`, record `verification.last_checked` and `verification.outcome: unverifiable_current`, and explain the missing check. Verified recovery appends proof and contributes one supporting observation, but records `resolved_at` separately without changing the last failure timestamp. Leave unverified prior records unresolved.
+6. Classify status independently from comparison and verification coverage: a newly recorded transient incident can have `status: transient` and `comparison: new`; an old intermittent status can remain while its current failure is unverified. Reclassify a startup-like incident when later evidence proves recurrence, preserving its ID even if its wording is now misleading. Reserve `regression` for recurrence after a previously verified `resolved` status; otherwise report recurrence or worsening explicitly. Only set `resolved` after sufficient later verification.
+7. Validate the baseline with the engine, produce structured MCP-grounded observations, run dry-run and then apply only when deployment prerequisites and scope allow it. Report actual engine return codes, before/after counts, backup, history consistency, durability flag, readback and validation results. Never claim a successful commit before all checks pass; report unavailable execution tools explicitly.
+
+### Verification-only and preactivation scope
+
+- Treat isolated testing, production dry-run, and production activation as separate authorization gates. When asked to prepare or verify only, never invoke `apply` (including `--recover-only`), create a production lock file, or repair pending history; report the condition instead.
+- Verify terminal/Python availability live before deciding execution is blocked. Run isolated tests fail-fast against a private scratch copy of the real fixture, with bytecode output confined to scratch; stop on a failed test without changing code, the Skill, packages, or system configuration unless separately authorized.
+- For production read-only preparation, save the baseline and observation lot under private scratch only when scratch writes are authorized; when all file creation is prohibited, keep inspection data in memory and do not run fixture or batch-generation recipes. Prove the engine command has no storage writes, and compare register bytes, journal existence/content, and production path inventory before and after. Follow the recipes in `references/storage.md`; distinguish application metadata from possible filesystem access-time updates.
+- Report simulated record changes separately from verification coverage: unverified observations can update a record's verification metadata, while omitted records are unchanged and not checked. Never add overlapping counts or present an accepted dry-run as an activated engine.
+
+### Local persistence through the Python engine
+
+Prerequisites: a local terminal/Python 3 runner, Linux flock, a private existing local store directory, and successful isolated tests before first production adoption. This installation does not modify production storage. The authoritative specification is `references/storage.md`; the v0.2 direct-write workflow is retired, not a fallback.
+
+1. Run `python3 scripts/incident_store.py --store-dir /home/hermesadmin/.hermes/ha-admin validate` and `status` through the terminal tool, using the script's absolute path when not in the skill directory. Inspect the real root object and all existing data; stop on invalid JSON, duplicate IDs, history/digest conflicts, permissions or unsupported execution. Record the returned raw `registry_sha256` as the observation batch baseline.
+2. Gather only read-only MCP observations. Prepare the exact version-1 batch with one UUID `audit_id`, an actual audit timestamp, `base_sha256` and per-incident observations. Reuse existing IDs; never supply rewritten first-observed dates or replacement incident objects. Unchanged historical logs produce unverified observations, not new failure evidence. Omitted incidents are retained. Hypotheses remain in the report, not new confirmed records.
+3. Supply the batch to `dry-run --observations <file>` or stdin (`--observations -`) and inspect computed comparison counts. Supply complete exact member snapshots for group resolution; unknown/missing/unchecked members and partial coverage cannot resolve a group. Preserve all unknown fields, evidence, observation history and IDs through the engine's non-destructive merge, not manual recopying.
+4. After the deployment gate is satisfied, invoke `apply` with the same validated batch. The engine holds the exclusive store-directory lock, validates and verifies an immutable byte-exact reference backup, commits the register atomically and reconciles JSONL history. No Home Assistant mutations, credentials or scheduled tasks are part of this operation.
+5. If interrupted or commit outcome is uncertain, inspect `status`; run `apply --recover-only` or retry the exact identical batch. A committed audit_id is never merged twice. Do not change its payload, truncate receipts, restore an old register alone, or manually append journal entries to bypass errors.
+6. Verify exit code, result, counts, pending-history count, directory-fsync flag, `validate`, `history`, and exact register readback. Report failures and whether a commit may already exist. Without an execution tool, report the blocked persistence and leave the production files unchanged; `read_file`/`write_file` alone do not execute the engine.
 
 ## Output style
 - Lead with the most important finding.
 - Use short, concrete bullets.
 - Prefer exact identifiers over paraphrase.
+- For lightweight daily audits, prioritize changes in a concise French report, normally 5–10 lines: general health, unavailable total only with complete coverage, important new issues, worsening/regressions, confirmed resolutions, critical issues still active in one line, storage outcome and collection limits. Do not repeat unchanged incident lists; provide a short explicit no-change assessment when appropriate. Limit deep checks to roughly 20–30 priority objects unless justified, avoid exhaustive automation/dashboard YAML review, and do not rerun the isolated Python suite on every audit.
+- For full incident inventories explicitly requested by the user, show every recorded ID, status, criticality, and first-observed timestamp; a shared timestamp can be stated once clearly. For comparative audits, lead with a before/after table of record counts, new records, confirmed persistence, recurrence, regressions, confirmed resolutions, and current-unverifiable records. Distinguish newly unavailable group members from newly created incident records, and state when categories overlap or were not measured in the baseline. Keep confirmed failures, transients, and potential risks separate.
+- Report exact local write/read/validation results and distinguish audit-tool errors from pre-existing installation incidents.
 - End with clear next actions when appropriate.
 
 ## Verification
@@ -182,4 +226,5 @@ Before closing an assessment:
 - separate confirmed issues from hypotheses
 - note anything you could not verify
 - do not claim a fix unless you re-read the exact target after the fix
-- if a local incident record is written, verify the resulting JSON file contents after the atomic save
+- require engine-verified reference backup, register validation/readback, unchanged stable IDs and first-observed dates, preserved evidence/unknown fields, reconciled comparison counts and consistent audit history
+- report atomic register replacement separately from recoverable two-file journal consistency; disclose unsupported directory fsync and all execution/test limitations, and never announce successful persistence without actual engine output and readback
